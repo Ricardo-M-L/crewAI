@@ -74,6 +74,50 @@ def test_delete_count(storage: QdrantEdgeStorage) -> None:
     assert storage.count() == 0
 
 
+@pytest.mark.parametrize("scope_prefix", ["/team/a", "/team/a/", "team/a"])
+@pytest.mark.parametrize("central", [False, True])
+def test_delete_ids_respects_scope_prefix(
+    storage: QdrantEdgeStorage, scope_prefix: str, central: bool
+) -> None:
+    selected = _rec(content="selected", scope="/team/a/child")
+    unselected = _rec(content="unselected", scope="/team/a")
+    sibling = _rec(content="sibling", scope="/team/ab")
+    storage.save([selected, unselected, sibling])
+    if central:
+        storage.flush_to_central()
+
+    deleted = storage.delete(
+        scope_prefix=scope_prefix, record_ids=[selected.id, sibling.id]
+    )
+
+    assert deleted == 1
+    assert storage.get_record(selected.id) is None
+    assert storage.get_record(unselected.id) is not None
+    assert storage.get_record(sibling.id) is not None
+    assert storage.count() == 2
+
+
+def test_delete_ids_outside_scope_is_a_noop(storage: QdrantEdgeStorage) -> None:
+    record = _rec(scope="/team/b")
+    storage.save([record])
+
+    assert storage.delete(scope_prefix="/team/a", record_ids=[record.id]) == 0
+    assert storage.get_record(record.id) is not None
+
+
+@pytest.mark.parametrize("scope_prefix", [None, "/"])
+def test_delete_ids_without_scope_keeps_unselected_records(
+    storage: QdrantEdgeStorage, scope_prefix: str | None
+) -> None:
+    selected = _rec(scope="/team/a")
+    unselected = _rec(scope="/team/b")
+    storage.save([selected, unselected])
+
+    assert storage.delete(scope_prefix=scope_prefix, record_ids=[selected.id]) == 1
+    assert storage.get_record(selected.id) is None
+    assert storage.get_record(unselected.id) is not None
+
+
 def test_update_get_record(storage: QdrantEdgeStorage) -> None:
     r = _rec(content="original", scope="/a")
     storage.save([r])
